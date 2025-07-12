@@ -1,6 +1,5 @@
-package com.github.rodmotta.payment_service.service;
+package com.github.rodmotta.inventory_service.service;
 
-import com.github.rodmotta.payment_service.event.OrderEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -10,22 +9,21 @@ import java.util.Random;
 
 @Service
 @RequiredArgsConstructor
-public class PaymentService {
+public class InventoryService {
     private final KafkaTemplate<String, String> kafkaTemplate;
 
-    @KafkaListener(topics = "order.created", groupId = "payment-service")
-    public void pay(OrderEvent message) throws InterruptedException {
+    @KafkaListener(topics = "payment.approved", groupId = "inventory-service")
+    public void checkInventory(String orderId) throws InterruptedException {
+        orderId = orderId.replace("\"", "");
         Thread.sleep(3000);
 
         Random random = new Random();
         int randomNumber = random.nextInt(5);
 
         if (randomNumber == 0) {
-            kafkaTemplate.send("payment.failed", message.id().toString());
+            kafkaTemplate.send("inventory.failed", orderId);
             return;
         }
-        kafkaTemplate.send("payment.approved", message.id().toString());
+        kafkaTemplate.send("inventory.reserved", orderId);
     }
-
-    //inventory.failed
 }

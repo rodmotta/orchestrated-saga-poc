@@ -1,5 +1,6 @@
 package com.github.rodmotta.order_service.service;
 
+import com.github.rodmotta.order_service.entity.InventoryStatus;
 import com.github.rodmotta.order_service.entity.Order;
 import com.github.rodmotta.order_service.entity.PaymentStatus;
 import com.github.rodmotta.order_service.entity.Status;
@@ -35,8 +36,6 @@ public class OrderService {
                 .orElseThrow();
         order.setPaymentStatus(PaymentStatus.APPROVED);
         orderRepository.save(order);
-
-        kafkaTemplateString.send("order.inventory_check", orderId);
     }
 
     @KafkaListener(topics = "payment.failed", groupId = "order-service")
@@ -45,6 +44,27 @@ public class OrderService {
         Order order = orderRepository.findById(UUID.fromString(orderId))
                 .orElseThrow();
         order.setPaymentStatus(PaymentStatus.FAILED);
+        order.setStatus(Status.CANCELLED);
+        orderRepository.save(order);
+    }
+
+    @KafkaListener(topics = "inventory.reserved", groupId = "order-service")
+    public void inventoryReserved(String orderId) {
+        orderId = orderId.replace("\"", "");
+        Order order = orderRepository.findById(UUID.fromString(orderId))
+                .orElseThrow();
+        order.setInventoryStatus(InventoryStatus.RESERVED);
+        order.setStatus(Status.COMPLETED);
+        orderRepository.save(order);
+    }
+
+    @KafkaListener(topics = "inventory.failed", groupId = "order-service")
+    public void inventoryFailed(String orderId) {
+        orderId = orderId.replace("\"", "");
+        Order order = orderRepository.findById(UUID.fromString(orderId))
+                .orElseThrow();
+        order.setInventoryStatus(InventoryStatus.FAILED);
+        order.setPaymentStatus(PaymentStatus.FAILED); //rollback
         order.setStatus(Status.CANCELLED);
         orderRepository.save(order);
     }

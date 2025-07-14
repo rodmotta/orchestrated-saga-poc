@@ -4,67 +4,66 @@ import com.github.rodmotta.order_service.entity.InventoryStatus;
 import com.github.rodmotta.order_service.entity.Order;
 import com.github.rodmotta.order_service.entity.PaymentStatus;
 import com.github.rodmotta.order_service.entity.Status;
+import com.github.rodmotta.order_service.messaging.KafkaProducer;
+import com.github.rodmotta.order_service.messaging.event.*;
 import com.github.rodmotta.order_service.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class OrderService {
     private final OrderRepository orderRepository;
-    private final KafkaTemplate<String, Order> kafkaTemplate;
-    private final KafkaTemplate<String, String> kafkaTemplateString;
+    private final KafkaProducer kafkaProducer;
 
     public void create() {
         Order order = orderRepository.save(new Order());
-        kafkaTemplate.send("order.created", order);
+        kafkaProducer.createOrderEvent(order.getId());
     }
 
     public List<Order> getOrders() {
         return orderRepository.findAll();
     }
 
-    @KafkaListener(topics = "payment.approved", groupId = "order-service")
-    public void paymentApproved(String orderId) {
-        orderId = orderId.replace("\"", "");
-        Order order = orderRepository.findById(UUID.fromString(orderId))
+    public void paymentApproved(PaymentApprovedEvent event) {
+        Order order = orderRepository.findById(event.orderId())
                 .orElseThrow();
         order.setPaymentStatus(PaymentStatus.APPROVED);
         orderRepository.save(order);
+        kafkaProducer.inventoryReserveEvent(order.getId());
     }
 
-    @KafkaListener(topics = "payment.failed", groupId = "order-service")
-    public void paymentFailed(String orderId) {
-        orderId = orderId.replace("\"", "");
-        Order order = orderRepository.findById(UUID.fromString(orderId))
+    public void paymentFailed(PaymentFailedEvent event) {
+        Order order = orderRepository.findById(event.orderId())
                 .orElseThrow();
         order.setPaymentStatus(PaymentStatus.FAILED);
         order.setStatus(Status.CANCELLED);
         orderRepository.save(order);
     }
 
-    @KafkaListener(topics = "inventory.reserved", groupId = "order-service")
-    public void inventoryReserved(String orderId) {
-        orderId = orderId.replace("\"", "");
-        Order order = orderRepository.findById(UUID.fromString(orderId))
+    public void inventoryReserved(InventoryReservedEvent event) {
+        Order order = orderRepository.findById(event.orderId())
                 .orElseThrow();
         order.setInventoryStatus(InventoryStatus.RESERVED);
         order.setStatus(Status.COMPLETED);
         orderRepository.save(order);
     }
 
-    @KafkaListener(topics = "inventory.failed", groupId = "order-service")
-    public void inventoryFailed(String orderId) {
-        orderId = orderId.replace("\"", "");
-        Order order = orderRepository.findById(UUID.fromString(orderId))
+    public void inventoryFailed(InventoryFailedEvent event) {
+        Order order = orderRepository.findById(event.orderId())
                 .orElseThrow();
-        order.setInventoryStatus(InventoryStatus.FAILED);
-        order.setPaymentStatus(PaymentStatus.FAILED); //rollback
+        order.setInventoryStatus(InventoryStatus.OUT_OF_STOCK);
+        order.setPaymentStatus(PaymentStatus.REFUNDING);
+        orderRepository.save(order);
+        kafkaProducer.paymentRefund(order.getId());
+    }
+
+    public void paymentRefunded(PaymentRefundedEvent event) {
+        Order order = orderRepository.findById(event.orderId())
+                .orElseThrow();
+        order.setPaymentStatus(PaymentStatus.REFUNDED);
         order.setStatus(Status.CANCELLED);
         orderRepository.save(order);
     }

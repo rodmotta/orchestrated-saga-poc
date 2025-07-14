@@ -1,5 +1,5 @@
 package com.github.rodmotta.order_service.entity;
 
 public enum InventoryStatus {
-    RESERVED, FAILED
+    RESERVED, OUT_OF_STOCK
 }
